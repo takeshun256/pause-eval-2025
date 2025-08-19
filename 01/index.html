@@ -33,6 +33,86 @@
     }
   </style>
 </head>
+  
+<!-- index.html の </body> 直前に追加: 音声をaudio control=>js -->
+<script>
+(function() {
+  // 拡張子の試行順（必要に応じて並び替え）
+  const TRY_EXTS = [".mp3", ".ogg", ".wav"];
+
+  // iOS サウンド解錠
+  let unlocked = false;
+  function unlockAudio() {
+    if (unlocked) return;
+    const a = new Audio();
+    a.play().catch(() => {}).finally(() => { unlocked = true; });
+    window.removeEventListener('touchstart', unlockAudio);
+    window.removeEventListener('click', unlockAudio);
+  }
+  window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+  window.addEventListener('click', unlockAudio, { once: true });
+
+  // すべての <audio> を処理
+  document.querySelectorAll('audio[src], audio[data-src]').forEach(initSmartAudio);
+
+  function initSmartAudio(audioEl) {
+    const original = audioEl.getAttribute('data-src') || audioEl.getAttribute('src');
+    if (!original) return;
+
+    // ベースパス & 既存拡張子を分離
+    const m = original.match(/^(.*?)(\.[a-z0-9]+)$/i);
+    const base = m ? m[1] : original;     // 例: "audio/audiobook_19_004_param_09_bertT_combined"
+    const origExt = m ? m[2].toLowerCase() : "";
+
+    // 候補拡張子列を作る（元の拡張子を先頭に優先）
+    const exts = Array.from(new Set([origExt, ...TRY_EXTS].filter(Boolean)));
+
+    // ブラウザが再生可能と示すものを順に試す
+    tryNext(0);
+
+    function tryNext(i) {
+      if (i >= exts.length) {
+        // 失敗表示（必要ならUI調整）
+        audioEl.insertAdjacentHTML('afterend',
+          '<div style="color:#c62828">この音声はこの環境で再生できませんでした。</div>');
+        return;
+      }
+      const candidate = base + exts[i];
+      const test = new Audio();
+      if (canPlayByExt(test, exts[i])) {
+        // 実際に設定してロード→エラーなら次
+        audioEl.src = candidate;
+        // 既存 <source> を消しておく（競合回避）
+        audioEl.querySelectorAll('source').forEach(s => s.remove());
+
+        // 一度でも再生を始められればOK。エラーはフォールバック。
+        const onError = () => {
+          audioEl.removeEventListener('error', onError);
+          tryNext(i + 1);
+        };
+        audioEl.addEventListener('error', onError, { once: true });
+
+        // 自動で .load() しておくとコントロールの初期化が早い
+        audioEl.load();
+      } else {
+        tryNext(i + 1);
+      }
+    }
+
+    function canPlayByExt(a, ext) {
+      // 簡易判定：拡張子から MIME を推定して canPlayType
+      const map = {
+        ".mp3": "audio/mpeg",
+        ".ogg": "audio/ogg",
+        ".wav": "audio/wav"
+      };
+      const type = map[ext.toLowerCase()] || "";
+      return !!(type && a.canPlayType && a.canPlayType(type));
+    }
+  }
+})();
+</script>
+
 <body>
   <h1>評価ページ </h1>
 
